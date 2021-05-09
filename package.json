@@ -1,0 +1,25 @@
+{
+  "name": "schedulerbot",
+  "version": "1.0.0",
+  "description": "Discord bot to easily schedule events.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yummypasta/SchedulerBot.git"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/yummypasta/SchedulerBot/issues"
+  },
+  "homepage": "https://github.com/yummypasta/SchedulerBot#readme",
+  "dependencies": {
+    "chrono-node": "^2.2.6",
+    "discord.js": "^12.5.3",
+    "moment": "^2.29.1",
+    "node-schedule": "^2.0.0"
+  }
+}
