@@ -31,7 +31,8 @@ bot.on("messageReactionAdd", async (reaction, user) => {
     if(event == undefined) return;
     const member = reaction.message.guild.member(user);
     if(member == null) return;
-
+    if(event.signups.includes(user.id)) return;
+    
     if(event.signups.length >= event.maxPlayers && event.maxPlayers != 0){
         reaction.users.remove(user);
         const embed = new Discord.MessageEmbed()
@@ -41,7 +42,6 @@ bot.on("messageReactionAdd", async (reaction, user) => {
         user.send({embed: embed});
         return;
     }
-
     event.signups.push(user.id);
     const role = await reaction.message.guild.roles.fetch(event.role);
     member.roles.add(role);
@@ -78,7 +78,7 @@ bot.on("messageDelete", async (message) => {
     const eventIdx = scheduledEvents.findIndex(i => message.id == i.msgId);
     const event = scheduledEvents[eventIdx];
     if(event == undefined) return;
-    // TODO: cancel cron
+    event.scheduleJob.cancel();
     const role = await message.guild.roles.fetch(event.role);
     role.delete();
 
@@ -86,7 +86,10 @@ bot.on("messageDelete", async (message) => {
         .setColor("#ff4f4f")
         .setTitle("Canceled: " + event.name)
         .setDescription("The event previously scheduled for " + moment(event.time).format("ddd, MMM D [at] h:mma") + " has been canceled.");
-    message.channel.send({embed: embed});
+    message.channel.send({
+        embed: embed,
+        content: `<@&${event.role}> **${event.name}** has been canceled!`
+    });
     event.signups.forEach((userId) => {
         message.guild.members.fetch(userId).then(member => {
             member.send({embed: embed});
@@ -129,6 +132,7 @@ async function executeCommand(cmd, msg){
                 msg.channel.send("🤡 Missing argument: --name");
                 return;
             }
+            const name = cmd.args.name.replace(/amongus|among us/g, "amogus");
             if(!("time" in cmd.args)){
                 msg.channel.send("🤡 Missing argument: --time");
                 return;
@@ -136,6 +140,10 @@ async function executeCommand(cmd, msg){
             const parsedTime = chrono.parseDate(cmd.args.time);
             if(parsedTime == null){
                 msg.channel.send("🤡 Invalid start time. Use natural language, e.g. \"Tomorrow at 5:30pm\"");
+                return;
+            }
+            if(parsedTime.getTime() < Date.now()){
+                msg.channel.send("🤡 The time specified is in the past!");
                 return;
             }
             let minPlayers = 0;
@@ -154,7 +162,7 @@ async function executeCommand(cmd, msg){
             }
             const embed = new Discord.MessageEmbed()
                 .setColor("#9cffc0")
-                .setTitle(cmd.args.name)
+                .setTitle(name)
                 .setDescription("React with " + REACTION_EMOJI + " to sign up!")
                 .addField("Starts at", moment(parsedTime).format("ddd, MMM D [at] h:mma"))
                 .setFooter(`Created by ${msg.author.username} | Delete this message to cancel`, msg.author.displayAvatarURL());
@@ -173,7 +181,7 @@ async function executeCommand(cmd, msg){
             }
             const newRole = await msg.guild.roles.create({
                 data: {
-                    name: "Signups: " + cmd.args.name,
+                    name: "Signups: " + name,
                     mentionable: true
                 }
             });
@@ -183,14 +191,15 @@ async function executeCommand(cmd, msg){
             const sentMessage = await msg.channel.send({embed: embed, content: mentionsString});
             sentMessage.react(REACTION_EMOJI);
             scheduledEvents.push({
-                name: cmd.args.name,
+                name: name,
                 time: parsedTime,
                 minPlayers,
                 maxPlayers,
                 msgId: sentMessage.id,
                 signups: [],
                 role: newRole.id,
-                scheduleJob: job
+                scheduleJob: job,
+                createdBy: msg.author.id
             });
             msg.delete();
             break;
@@ -203,7 +212,54 @@ async function executeCommand(cmd, msg){
 }
 
 async function onEventStart(msgId, channel){
-    const event = scheduledEvents.find(i => reaction.message.id == i.msgId);
-    if(event == undefined) return;
-    // TODO
+    const eventIdx = scheduledEvents.findIndex(i => msgId == i.msgId);
+    if(eventIdx == -1) return;
+    const event = scheduledEvents[eventIdx];
+
+    if(event.signups.length >= event.minPlayers){
+        const eventCreator = await channel.guild.members.fetch(event.createdBy);
+        const promises = [];
+        event.signups.forEach((userId) => {
+            promises.push(channel.guild.members.fetch(userId));
+        });
+        const settled = await Promise.allSettled(promises);
+        let playersString = "";
+        for(let i of settled){
+            if(i.status == "fulfilled"){
+                if(playersString.length != 0) playersString += ", ";
+                playersString += i.value.displayName;
+            }
+        }
+        const embed = new Discord.MessageEmbed()
+            .setColor("#ab9cff")
+            .setTitle("Starting: " + event.name)
+            .addField("Starts at", moment(event.time).format("ddd, MMM D [at] h:mma"), false)
+            .addField("Signups", event.maxPlayers == 0 ? event.signups.length.toString() : `${event.signups.length} / ${event.maxPlayers}`, true)
+            .addField("Players", playersString, true)
+            .setFooter(`Created by ${eventCreator.user.username}`, eventCreator.user.displayAvatarURL());
+        await channel.send({
+            embed: embed,
+            content: `<@&${event.role}> **${event.name}** is starting!`
+        });
+        for(let i of settled){
+            if(i.status == "fulfilled") i.value.send({embed: embed});
+        }
+    } else {
+        const embed = new Discord.MessageEmbed()
+            .setColor("#ff4f4f")
+            .setTitle("Not enough signups: " + event.name)
+            .setDescription("Not enough signups to start! The event previously scheduled for " + moment(event.time).format("ddd, MMM D [at] h:mma") + " has been canceled.");
+        await channel.send({
+            embed: embed,
+            content: `<@&${event.role}> **${event.name}** has been canceled!`
+        });
+        event.signups.forEach((userId) => {
+            channel.guild.members.fetch(userId).then(member => {
+                member.send({embed: embed});
+            });
+        });
+    }
+    const role = await channel.guild.roles.fetch(event.role);
+    // role.delete();
+    scheduledEvents.splice(eventIdx, 1);
 }
