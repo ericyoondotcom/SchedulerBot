@@ -3,7 +3,7 @@ const chrono = require("chrono-node");
 const moment = require("moment");
 const schedule = require("node-schedule");
 
-const TOKEN = "ODQwODMwOTA2MzM0ODM4ODI1.YJd6zQ.FFxyUpxUIFGvod8OTcuge5Z2MfU";
+const TOKEN = process.env.DISCORD_TOKEN;
 const PREFIX = "game ";
 const REACTION_EMOJI = "🙋";
 
