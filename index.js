@@ -1,3 +1,4 @@
+require("dotenv").config()
 const Discord = require("discord.js");
 const chrono = require("chrono-node");
 const moment = require("moment");
